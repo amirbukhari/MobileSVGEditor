@@ -184,6 +184,27 @@ function fmt(n: number): string {
   return Number(n.toFixed(3)).toString();
 }
 
+// Splits a compound path's commands at each "M" into independent subpaths —
+// e.g. a wordmark exported as one <path> with one sub-contour per letter.
+export function splitSubpaths(commands: PathCommand[]): PathCommand[][] {
+  const subpaths: PathCommand[][] = [];
+  let current: PathCommand[] = [];
+  for (const c of commands) {
+    if (c.type === 'M') {
+      if (current.length) subpaths.push(current);
+      current = [c];
+    } else {
+      current.push(c);
+    }
+  }
+  if (current.length) subpaths.push(current);
+  return subpaths;
+}
+
+export function countSubpaths(d: string): number {
+  return splitSubpaths(parsePath(d)).length;
+}
+
 export function pathBounds(d: string): { x: number; y: number; width: number; height: number } {
   const commands = parsePath(d);
   let minX = Infinity;

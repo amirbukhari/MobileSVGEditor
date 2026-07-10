@@ -1,4 +1,5 @@
 import { useEditorStore } from '../store/editorStore';
+import { countSubpaths } from '../lib/pathData';
 
 export function BottomToolbar() {
   const shapes = useEditorStore((s) => s.shapes);
@@ -9,12 +10,14 @@ export function BottomToolbar() {
   const deleteShape = useEditorStore((s) => s.deleteShape);
   const reorderShape = useEditorStore((s) => s.reorderShape);
   const flipShape = useEditorStore((s) => s.flipShape);
+  const breakApartShape = useEditorStore((s) => s.breakApartShape);
   const setLayersOpen = useEditorStore((s) => s.setLayersOpen);
   const setSimplifyOpen = useEditorStore((s) => s.setSimplifyOpen);
 
   const shape = shapes.find((s) => s.id === selectedId);
   const isNodeEditable = shape && (shape.type === 'path' || shape.type === 'polygon' || shape.type === 'polyline');
   const inNodeEdit = shape && nodeEditId === shape.id;
+  const isBreakable = shape && shape.type === 'path' && countSubpaths(shape.d) > 1;
 
   return (
     <div className="bottom-toolbar">
@@ -38,6 +41,12 @@ export function BottomToolbar() {
             <button className="tool-btn" onClick={() => setSimplifyOpen(true)}>
               <span className="tool-icon">✂</span>
               Simplify
+            </button>
+          )}
+          {isBreakable && (
+            <button className="tool-btn" onClick={() => breakApartShape(shape.id)}>
+              <span className="tool-icon">◫</span>
+              Break Apart
             </button>
           )}
           <button className="tool-btn" onClick={() => flipShape(shape.id, 'h')}>

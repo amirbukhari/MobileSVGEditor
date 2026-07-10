@@ -1,7 +1,8 @@
 import { create } from 'zustand';
-import type { EditorStep, Shape, ShapeStyle, ShapeTransform, SvgDoc } from '../types';
+import type { EditorStep, PathShape, Shape, ShapeStyle, ShapeTransform, SvgDoc } from '../types';
 import { defaultStyle, defaultTransform } from '../types';
 import { parseSvgString, starterShapes } from '../lib/svgImport';
+import { parsePath, serializePath, splitSubpaths } from '../lib/pathData';
 
 interface HistoryEntry {
   shapes: Shape[];
@@ -47,6 +48,7 @@ interface EditorState {
   deleteShape: (id: string) => void;
   reorderShape: (id: string, dir: 'front' | 'back' | 'forward' | 'backward') => void;
   flipShape: (id: string, axis: 'h' | 'v') => void;
+  breakApartShape: (id: string) => void;
 
   pushHistory: () => void;
   undo: () => void;
@@ -247,6 +249,30 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           : s
       ),
     }));
+  },
+
+  breakApartShape: (id) => {
+    const shape = get().shapes.find((s) => s.id === id);
+    if (!shape || shape.type !== 'path') return;
+    const subpaths = splitSubpaths(parsePath(shape.d));
+    if (subpaths.length < 2) return;
+
+    get().pushHistory();
+    set((state) => {
+      const idx = state.shapes.findIndex((s) => s.id === id);
+      if (idx === -1) return state;
+      const pieces: PathShape[] = subpaths.map((sp, i) => ({
+        ...shape,
+        id: `shape_${Date.now().toString(36)}_${Math.floor(Math.random() * 100000)}_${i}`,
+        name: `${shape.name} ${i + 1}`,
+        d: serializePath(sp),
+        style: { ...shape.style },
+        transform: { ...shape.transform },
+      }));
+      const shapes = [...state.shapes];
+      shapes.splice(idx, 1, ...pieces);
+      return { shapes, selectedId: pieces[0].id };
+    });
   },
 
   pushHistory: () => {

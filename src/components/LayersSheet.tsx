@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useEditorStore } from '../store/editorStore';
 
 export function LayersSheet() {
@@ -6,12 +7,21 @@ export function LayersSheet() {
   const select = useEditorStore((s) => s.select);
   const toggleVisible = useEditorStore((s) => s.toggleVisible);
   const toggleLocked = useEditorStore((s) => s.toggleLocked);
+  const renameShape = useEditorStore((s) => s.renameShape);
   const layersOpen = useEditorStore((s) => s.layersOpen);
   const setLayersOpen = useEditorStore((s) => s.setLayersOpen);
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
 
   if (!layersOpen) return null;
 
   const ordered = [...shapes].reverse();
+
+  const commitRename = () => {
+    if (editingId && editValue.trim()) renameShape(editingId, editValue.trim());
+    setEditingId(null);
+  };
 
   return (
     <div className="sheet-backdrop" onClick={() => setLayersOpen(false)}>
@@ -30,12 +40,37 @@ export function LayersSheet() {
               key={shape.id}
               className={`layer-row ${shape.id === selectedId ? 'active' : ''}`}
               onClick={() => {
+                if (editingId === shape.id) return;
                 select(shape.id);
                 setLayersOpen(false);
               }}
             >
               <span className="layer-swatch" style={{ background: shape.style.fill === 'none' ? 'transparent' : shape.style.fill }} />
-              <span className="layer-name">{shape.name}</span>
+              {editingId === shape.id ? (
+                <input
+                  className="layer-name-input"
+                  value={editValue}
+                  autoFocus
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  onBlur={commitRename}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitRename();
+                    if (e.key === 'Escape') setEditingId(null);
+                  }}
+                />
+              ) : (
+                <span
+                  className="layer-name"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingId(shape.id);
+                    setEditValue(shape.name);
+                  }}
+                >
+                  {shape.name}
+                </span>
+              )}
               <button
                 className="icon-btn small"
                 onClick={(e) => {
