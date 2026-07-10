@@ -10,6 +10,7 @@ export function BottomToolbar() {
   const reorderShape = useEditorStore((s) => s.reorderShape);
   const flipShape = useEditorStore((s) => s.flipShape);
   const setLayersOpen = useEditorStore((s) => s.setLayersOpen);
+  const setSimplifyOpen = useEditorStore((s) => s.setSimplifyOpen);
 
   const shape = shapes.find((s) => s.id === selectedId);
   const isNodeEditable = shape && (shape.type === 'path' || shape.type === 'polygon' || shape.type === 'polyline');
@@ -31,6 +32,12 @@ export function BottomToolbar() {
             >
               <span className="tool-icon">✎</span>
               {inNodeEdit ? 'Done editing' : 'Edit points'}
+            </button>
+          )}
+          {isNodeEditable && (
+            <button className="tool-btn" onClick={() => setSimplifyOpen(true)}>
+              <span className="tool-icon">✂</span>
+              Simplify
             </button>
           )}
           <button className="tool-btn" onClick={() => flipShape(shape.id, 'h')}>

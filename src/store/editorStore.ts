@@ -15,6 +15,7 @@ interface EditorState {
   step: EditorStep;
   nodeEditId: string | null;
   layersOpen: boolean;
+  simplifyOpen: boolean;
 
   past: HistoryEntry[];
   future: HistoryEntry[];
@@ -29,6 +30,7 @@ interface EditorState {
   setStep: (step: EditorStep) => void;
   toggleNodeEdit: (id: string | null) => void;
   setLayersOpen: (open: boolean) => void;
+  setSimplifyOpen: (open: boolean) => void;
 
   // Editing
   updateTransform: (id: string, patch: Partial<ShapeTransform>, commit?: boolean) => void;
@@ -37,6 +39,7 @@ interface EditorState {
   updateShapeGeometry: (id: string, patch: Partial<Shape>) => void;
   updateGeometryLive: (id: string, patch: Partial<Shape>) => void;
   commitPending: () => void;
+  discardPending: () => void;
   renameShape: (id: string, name: string) => void;
   toggleVisible: (id: string) => void;
   toggleLocked: (id: string) => void;
@@ -64,6 +67,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   step: 'shape',
   nodeEditId: null,
   layersOpen: false,
+  simplifyOpen: false,
   past: [],
   future: [],
 
@@ -111,6 +115,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setStep: (step) => set({ step, nodeEditId: null }),
   toggleNodeEdit: (id) => set({ nodeEditId: id }),
   setLayersOpen: (open) => set({ layersOpen: open }),
+  setSimplifyOpen: (open) => set({ simplifyOpen: open }),
 
   updateTransform: (id, patch, commit = false) => {
     if (pendingSnapshot === null) {
@@ -141,6 +146,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         past: [...state.past, { shapes: snapshot }],
         future: [],
       }));
+    }
+  },
+
+  discardPending: () => {
+    if (pendingSnapshot) {
+      const snapshot = pendingSnapshot;
+      pendingSnapshot = null;
+      set({ shapes: snapshot });
     }
   },
 

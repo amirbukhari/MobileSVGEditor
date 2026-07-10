@@ -5,6 +5,7 @@ import { Canvas, type CanvasHandle } from './Canvas';
 import { ZoomControls } from './ZoomControls';
 import { BottomToolbar } from './BottomToolbar';
 import { LayersSheet } from './LayersSheet';
+import { SimplifySheet } from './SimplifySheet';
 import { ColorPanel } from './ColorPanel';
 import { ExportPanel } from './ExportPanel';
 
@@ -25,6 +26,7 @@ export function Editor() {
         {step === 'export' && <ExportPanel />}
       </div>
       <LayersSheet />
+      <SimplifySheet />
     </div>
   );
 }

@@ -400,6 +400,26 @@
   margin: 0;
 }
 
+.simplify-count {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 14px;
+  margin: 4px 0 12px;
+}
+
+.simplify-count strong {
+  color: var(--text);
+  font-size: 16px;
+}
+
+.simplify-labels {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-dim);
+  font-size: 12px;
+  margin: 4px 0 18px;
+}
+
 .layers-list {
   overflow-y: auto;
   display: flex;
