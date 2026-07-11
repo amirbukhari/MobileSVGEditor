@@ -283,18 +283,29 @@ export function deleteNode(commands: PathCommand[], index: number): PathCommand[
   return out;
 }
 
-// Reset a curve anchor back to a plain corner (drops its bezier handles).
+// Reset a curve anchor back to a plain corner (drops both incoming and outgoing
+// bezier handles that touch that anchor).
 export function resetNode(commands: PathCommand[], index: number): PathCommand[] {
   const target = commands[index];
-  if (!target || !target.point || (target.type !== 'C' && target.type !== 'Q')) return commands;
+  if (!target || !target.point) return commands;
   const out = commands.slice();
-  out[index] = { type: 'L', point: { ...target.point } };
-  return out;
+  let changed = false;
+  if (target.type === 'C' || target.type === 'Q') {
+    out[index] = { type: 'L', point: { ...target.point } };
+    changed = true;
+  }
+  const next = out[index + 1];
+  if (next?.point && (next.type === 'C' || next.type === 'Q')) {
+    out[index + 1] = { type: 'L', point: { ...next.point } };
+    changed = true;
+  }
+  return changed ? out : commands;
 }
 
 export function nodeIsCurve(commands: PathCommand[], index: number): boolean {
   const c = commands[index];
-  return !!c && (c.type === 'C' || c.type === 'Q');
+  const next = commands[index + 1];
+  return !!((c && (c.type === 'C' || c.type === 'Q')) || (next && (next.type === 'C' || next.type === 'Q')));
 }
 
 export function pathBounds(d: string): { x: number; y: number; width: number; height: number } {
