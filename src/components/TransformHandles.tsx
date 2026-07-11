@@ -10,11 +10,12 @@ interface Props {
   shape: Shape;
   svgRef: React.RefObject<SVGSVGElement | null>;
   docSize: { width: number; height: number };
+  zoom: number;
 }
 
 const MOVE_THRESHOLD = 3;
 
-export function TransformHandles({ shape, svgRef, docSize }: Props) {
+export function TransformHandles({ shape, svgRef, zoom }: Props) {
   const updateTransform = useEditorStore((s) => s.updateTransform);
   const commitTransform = useEditorStore((s) => s.commitTransform);
   const dragRef = useRef<{
@@ -26,8 +27,10 @@ export function TransformHandles({ shape, svgRef, docSize }: Props) {
 
   const bbox = localBounds(shape);
   const center = boundsCenter(bbox);
-  const rotateOffset = Math.max(docSize.width, docSize.height) * 0.09;
-  const handleR = Math.max(Math.max(docSize.width, docSize.height) * 0.02, 4);
+  // Sizes in screen pixels, divided by zoom so handles stay a constant size.
+  const rotateOffset = 30 / zoom;
+  const handleR = 8 / zoom;
+  const hitR = 16 / zoom;
   const handles = buildHandles(bbox, rotateOffset);
 
   const { scaleX, scaleY, rotate, x, y } = shape.transform;
@@ -106,46 +109,26 @@ export function TransformHandles({ shape, svgRef, docSize }: Props) {
       {corners.map((h) => {
         const p = scaledPoint(h.ox, h.oy);
         return (
-          <circle
-            key={h.id}
-            cx={p.x}
-            cy={p.y}
-            r={handleR}
-            className="handle handle-corner"
-            onPointerDown={onHandlePointerDown(h)}
-            onPointerMove={onHandlePointerMove}
-            onPointerUp={onHandlePointerUp}
-            onPointerCancel={onHandlePointerUp}
-          />
+          <g key={h.id}>
+            <circle cx={p.x} cy={p.y} r={hitR} className="handle-hit" onPointerDown={onHandlePointerDown(h)} onPointerMove={onHandlePointerMove} onPointerUp={onHandlePointerUp} onPointerCancel={onHandlePointerUp} />
+            <circle cx={p.x} cy={p.y} r={handleR} className="handle handle-corner" pointerEvents="none" />
+          </g>
         );
       })}
       {['n', 's', 'w', 'e'].map((id) => {
         const h = handles.find((hh) => hh.id === id)!;
         const p = scaledPoint(h.ox, h.oy);
         return (
-          <circle
-            key={h.id}
-            cx={p.x}
-            cy={p.y}
-            r={handleR * 0.8}
-            className="handle handle-edge"
-            onPointerDown={onHandlePointerDown(h)}
-            onPointerMove={onHandlePointerMove}
-            onPointerUp={onHandlePointerUp}
-            onPointerCancel={onHandlePointerUp}
-          />
+          <g key={h.id}>
+            <circle cx={p.x} cy={p.y} r={hitR} className="handle-hit" onPointerDown={onHandlePointerDown(h)} onPointerMove={onHandlePointerMove} onPointerUp={onHandlePointerUp} onPointerCancel={onHandlePointerUp} />
+            <circle cx={p.x} cy={p.y} r={handleR * 0.8} className="handle handle-edge" pointerEvents="none" />
+          </g>
         );
       })}
-      <circle
-        cx={rotatePt.x}
-        cy={rotatePt.y}
-        r={handleR}
-        className="handle handle-rotate"
-        onPointerDown={onHandlePointerDown(rotateHandle)}
-        onPointerMove={onHandlePointerMove}
-        onPointerUp={onHandlePointerUp}
-        onPointerCancel={onHandlePointerUp}
-      />
+      <g>
+        <circle cx={rotatePt.x} cy={rotatePt.y} r={hitR} className="handle-hit" onPointerDown={onHandlePointerDown(rotateHandle)} onPointerMove={onHandlePointerMove} onPointerUp={onHandlePointerUp} onPointerCancel={onHandlePointerUp} />
+        <circle cx={rotatePt.x} cy={rotatePt.y} r={handleR} className="handle handle-rotate" pointerEvents="none" />
+      </g>
     </g>
   );
 }

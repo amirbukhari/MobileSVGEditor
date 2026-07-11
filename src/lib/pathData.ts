@@ -205,6 +205,98 @@ export function countSubpaths(d: string): number {
   return splitSubpaths(parsePath(d)).length;
 }
 
+function lerp(a: PathPoint, b: PathPoint, t: number): PathPoint {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
+// Whether command `index` represents a drawn segment that a node can be
+// inserted on (anything with a real geometry from the previous point — i.e.
+// not the initial move or a start-of-subpath move).
+export function isInsertableSegment(commands: PathCommand[], index: number): boolean {
+  if (index <= 0 || index >= commands.length) return false;
+  const seg = commands[index];
+  const prev = commands[index - 1];
+  return !!(seg.point && prev.point && seg.type !== 'M' && seg.type !== 'Z');
+}
+
+// Insert an anchor on the segment ending at command `index`, subdividing the
+// underlying line/curve at parameter `t` so the visible shape is unchanged.
+// Returns the new command list and the index of the freshly inserted anchor.
+export function insertNode(
+  commands: PathCommand[],
+  index: number,
+  t = 0.5
+): { commands: PathCommand[]; newIndex: number } {
+  if (!isInsertableSegment(commands, index)) return { commands, newIndex: index };
+  const seg = commands[index];
+  const prev = commands[index - 1];
+  const P0 = prev.point!;
+  const P3 = seg.point!;
+  const out = commands.slice();
+
+  if (seg.type === 'L') {
+    const mid = lerp(P0, P3, t);
+    out.splice(index, 1, { type: 'L', point: mid }, { type: 'L', point: { ...P3 } });
+  } else if (seg.type === 'C' && seg.controls) {
+    const [P1, P2] = seg.controls;
+    const A = lerp(P0, P1, t);
+    const B = lerp(P1, P2, t);
+    const C = lerp(P2, P3, t);
+    const D = lerp(A, B, t);
+    const E = lerp(B, C, t);
+    const F = lerp(D, E, t);
+    out.splice(
+      index,
+      1,
+      { type: 'C', point: F, controls: [A, D] },
+      { type: 'C', point: { ...P3 }, controls: [E, C] }
+    );
+  } else if (seg.type === 'Q' && seg.controls) {
+    const [P1] = seg.controls;
+    const A = lerp(P0, P1, t);
+    const B = lerp(P1, P3, t);
+    const M = lerp(A, B, t);
+    out.splice(index, 1, { type: 'Q', point: M, controls: [A] }, { type: 'Q', point: { ...P3 }, controls: [B] });
+  } else {
+    return { commands, newIndex: index };
+  }
+  return { commands: out, newIndex: index };
+}
+
+// Remove the anchor at command `index`. Keeps the path drawable (at least two
+// anchors) and, when deleting a subpath's opening move, promotes the next
+// anchor to the new "M".
+export function deleteNode(commands: PathCommand[], index: number): PathCommand[] {
+  const anchors = commands.filter((c) => c.point);
+  if (anchors.length <= 2) return commands;
+  const target = commands[index];
+  if (!target || !target.point) return commands;
+  const out = commands.slice();
+
+  if (target.type === 'M') {
+    const next = out[index + 1];
+    if (next && next.point && next.type !== 'M') {
+      out[index + 1] = { type: 'M', point: { ...next.point } };
+    }
+  }
+  out.splice(index, 1);
+  return out;
+}
+
+// Reset a curve anchor back to a plain corner (drops its bezier handles).
+export function resetNode(commands: PathCommand[], index: number): PathCommand[] {
+  const target = commands[index];
+  if (!target || !target.point || (target.type !== 'C' && target.type !== 'Q')) return commands;
+  const out = commands.slice();
+  out[index] = { type: 'L', point: { ...target.point } };
+  return out;
+}
+
+export function nodeIsCurve(commands: PathCommand[], index: number): boolean {
+  const c = commands[index];
+  return !!c && (c.type === 'C' || c.type === 'Q');
+}
+
 export function pathBounds(d: string): { x: number; y: number; width: number; height: number } {
   const commands = parsePath(d);
   let minX = Infinity;

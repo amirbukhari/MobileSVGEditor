@@ -1,8 +1,19 @@
 import { create } from 'zustand';
-import type { EditorStep, PathShape, Shape, ShapeStyle, ShapeTransform, SvgDoc } from '../types';
+import type { EditorStep, PathShape, PolyShape, Shape, ShapeStyle, ShapeTransform, ShapeType, SvgDoc } from '../types';
 import { defaultStyle, defaultTransform } from '../types';
 import { parseSvgString, starterShapes } from '../lib/svgImport';
-import { parsePath, serializePath, splitSubpaths } from '../lib/pathData';
+import {
+  deleteNode as deletePathNode,
+  insertNode as insertPathNode,
+  parsePath,
+  resetNode as resetPathNode,
+  serializePath,
+  splitSubpaths,
+} from '../lib/pathData';
+import { boundsCenter, localBounds } from '../lib/geometry';
+
+export type AddableShape = 'rect' | 'ellipse' | 'line' | 'triangle';
+export type AlignMode = 'center-h' | 'center-v' | 'left' | 'right' | 'top' | 'bottom';
 
 interface HistoryEntry {
   shapes: Shape[];
@@ -15,6 +26,7 @@ interface EditorState {
   selectedId: string | null;
   step: EditorStep;
   nodeEditId: string | null;
+  selectedNodeIndex: number | null;
   layersOpen: boolean;
   simplifyOpen: boolean;
 
@@ -24,14 +36,26 @@ interface EditorState {
   // File loading
   loadFromSvgString: (svgText: string) => void;
   loadStarter: () => void;
+  loadBlank: () => void;
   reset: () => void;
 
   // Selection / navigation
   select: (id: string | null) => void;
   setStep: (step: EditorStep) => void;
   toggleNodeEdit: (id: string | null) => void;
+  selectNode: (index: number | null) => void;
   setLayersOpen: (open: boolean) => void;
   setSimplifyOpen: (open: boolean) => void;
+
+  // Creation & arrangement
+  addShape: (type: AddableShape) => void;
+  resetTransform: (id: string) => void;
+  alignShape: (id: string, mode: AlignMode) => void;
+
+  // Node editing
+  addNode: (id: string, segIndex: number, t?: number) => void;
+  removeNode: (id: string, index: number) => void;
+  resetNode: (id: string, index: number) => void;
 
   // Editing
   updateTransform: (id: string, patch: Partial<ShapeTransform>, commit?: boolean) => void;
@@ -59,6 +83,17 @@ function cloneShapes(shapes: Shape[]): Shape[] {
   return shapes.map((s) => ({ ...s, style: { ...s.style }, transform: { ...s.transform } }));
 }
 
+function newId(): string {
+  return `shape_${Date.now().toString(36)}_${Math.floor(Math.random() * 1000000)}`;
+}
+
+function nextShapeName(shapes: Shape[], type: ShapeType): string {
+  const label =
+    type === 'rect' ? 'Rectangle' : type === 'ellipse' ? 'Ellipse' : type === 'line' ? 'Line' : type === 'polygon' ? 'Polygon' : 'Shape';
+  const n = shapes.filter((s) => s.name.startsWith(label)).length + 1;
+  return `${label} ${n}`;
+}
+
 let pendingSnapshot: Shape[] | null = null;
 
 export const useEditorStore = create<EditorState>((set, get) => ({
@@ -68,6 +103,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   selectedId: null,
   step: 'shape',
   nodeEditId: null,
+  selectedNodeIndex: null,
   layersOpen: false,
   simplifyOpen: false,
   past: [],
@@ -82,6 +118,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedId: null,
       step: 'shape',
       nodeEditId: null,
+      selectedNodeIndex: null,
       past: [],
       future: [],
     });
@@ -96,6 +133,21 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedId: null,
       step: 'shape',
       nodeEditId: null,
+      selectedNodeIndex: null,
+      past: [],
+      future: [],
+    });
+  },
+
+  loadBlank: () => {
+    set({
+      hasDocument: true,
+      doc: { width: 400, height: 400, viewBox: [0, 0, 400, 400] },
+      shapes: [],
+      selectedId: null,
+      step: 'shape',
+      nodeEditId: null,
+      selectedNodeIndex: null,
       past: [],
       future: [],
     });
@@ -108,14 +160,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedId: null,
       step: 'shape',
       nodeEditId: null,
+      selectedNodeIndex: null,
       past: [],
       future: [],
     });
   },
 
-  select: (id) => set({ selectedId: id, nodeEditId: null }),
-  setStep: (step) => set({ step, nodeEditId: null }),
-  toggleNodeEdit: (id) => set({ nodeEditId: id }),
+  select: (id) => set({ selectedId: id, nodeEditId: null, selectedNodeIndex: null }),
+  setStep: (step) => set({ step, nodeEditId: null, selectedNodeIndex: null }),
+  toggleNodeEdit: (id) => set({ nodeEditId: id, selectedNodeIndex: null }),
+  selectNode: (index) => set({ selectedNodeIndex: index }),
   setLayersOpen: (open) => set({ layersOpen: open }),
   setSimplifyOpen: (open) => set({ simplifyOpen: open }),
 
@@ -273,6 +327,142 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       shapes.splice(idx, 1, ...pieces);
       return { shapes, selectedId: pieces[0].id };
     });
+  },
+
+  addShape: (type) => {
+    get().pushHistory();
+    set((state) => {
+      const { doc } = state;
+      const cx = doc.viewBox[0] + doc.viewBox[2] / 2;
+      const cy = doc.viewBox[1] + doc.viewBox[3] / 2;
+      const size = Math.min(doc.viewBox[2], doc.viewBox[3]) * 0.4 || 80;
+      const base = {
+        id: newId(),
+        visible: true,
+        locked: false,
+        style: { ...defaultStyle(), fill: '#4f7cff' },
+        transform: defaultTransform(),
+      };
+      let shape: Shape;
+      if (type === 'rect') {
+        shape = { ...base, type: 'rect', name: nextShapeName(state.shapes, 'rect'), x: cx - size / 2, y: cy - size / 2, width: size, height: size, rx: 0, ry: 0 };
+      } else if (type === 'ellipse') {
+        shape = { ...base, type: 'ellipse', name: nextShapeName(state.shapes, 'ellipse'), cx, cy, rx: size / 2, ry: size / 2 };
+      } else if (type === 'line') {
+        shape = { ...base, type: 'line', name: nextShapeName(state.shapes, 'line'), style: { ...base.style, fill: 'none', stroke: '#4f7cff', strokeWidth: Math.max(size * 0.05, 2) }, x1: cx - size / 2, y1: cy + size / 2, x2: cx + size / 2, y2: cy - size / 2 };
+      } else {
+        const h = size * 0.87;
+        shape = {
+          ...base,
+          type: 'polygon',
+          name: nextShapeName(state.shapes, 'polygon'),
+          points: [
+            [cx, cy - h / 2],
+            [cx + size / 2, cy + h / 2],
+            [cx - size / 2, cy + h / 2],
+          ],
+        };
+      }
+      return { shapes: [...state.shapes, shape], selectedId: shape.id, nodeEditId: null, selectedNodeIndex: null };
+    });
+  },
+
+  resetTransform: (id) => {
+    get().pushHistory();
+    set((state) => ({
+      shapes: state.shapes.map((s) => (s.id === id ? { ...s, transform: defaultTransform() } : s)),
+    }));
+  },
+
+  alignShape: (id, mode) => {
+    get().pushHistory();
+    set((state) => {
+      const { doc } = state;
+      const [vx, vy, vw, vh] = doc.viewBox;
+      return {
+        shapes: state.shapes.map((s) => {
+          if (s.id !== id) return s;
+          const b = localBounds(s);
+          const c = boundsCenter(b);
+          // World center of the shape's local center is (transform.x + c). We
+          // move only via transform.x/y so the transformed extents shift by the
+          // same delta; good enough for un-rotated align to canvas bounds.
+          const worldMinX = s.transform.x + b.x;
+          const worldMinY = s.transform.y + b.y;
+          const t = { ...s.transform };
+          if (mode === 'center-h') t.x = vx + vw / 2 - c.x;
+          else if (mode === 'center-v') t.y = vy + vh / 2 - c.y;
+          else if (mode === 'left') t.x += vx - worldMinX;
+          else if (mode === 'right') t.x += vx + vw - (worldMinX + b.width);
+          else if (mode === 'top') t.y += vy - worldMinY;
+          else if (mode === 'bottom') t.y += vy + vh - (worldMinY + b.height);
+          return { ...s, transform: t };
+        }),
+      };
+    });
+  },
+
+  addNode: (id, segIndex, t = 0.5) => {
+    const shape = get().shapes.find((s) => s.id === id);
+    if (!shape) return;
+    if (shape.type === 'path') {
+      const res = insertPathNode(parsePath(shape.d), segIndex, t);
+      get().pushHistory();
+      set((state) => ({
+        shapes: state.shapes.map((s) => (s.id === id ? ({ ...s, d: serializePath(res.commands) } as Shape) : s)),
+        selectedNodeIndex: res.newIndex + 1,
+      }));
+    } else if (shape.type === 'polygon' || shape.type === 'polyline') {
+      const poly = shape as PolyShape;
+      const a = poly.points[segIndex];
+      const b = poly.points[(segIndex + 1) % poly.points.length];
+      if (!a || !b) return;
+      const mid: [number, number] = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+      const points = poly.points.slice();
+      points.splice(segIndex + 1, 0, mid);
+      get().pushHistory();
+      set((state) => ({
+        shapes: state.shapes.map((s) => (s.id === id ? ({ ...s, points } as Shape) : s)),
+        selectedNodeIndex: segIndex + 1,
+      }));
+    }
+  },
+
+  removeNode: (id, index) => {
+    const shape = get().shapes.find((s) => s.id === id);
+    if (!shape) return;
+    if (shape.type === 'path') {
+      const commands = parsePath(shape.d);
+      const next = deletePathNode(commands, index);
+      if (next === commands) return;
+      get().pushHistory();
+      set((state) => ({
+        shapes: state.shapes.map((s) => (s.id === id ? ({ ...s, d: serializePath(next) } as Shape) : s)),
+        selectedNodeIndex: null,
+      }));
+    } else if (shape.type === 'polygon' || shape.type === 'polyline') {
+      const poly = shape as PolyShape;
+      const min = shape.type === 'polygon' ? 3 : 2;
+      if (poly.points.length <= min) return;
+      const points = poly.points.filter((_, i) => i !== index);
+      get().pushHistory();
+      set((state) => ({
+        shapes: state.shapes.map((s) => (s.id === id ? ({ ...s, points } as Shape) : s)),
+        selectedNodeIndex: null,
+      }));
+    }
+  },
+
+  resetNode: (id, index) => {
+    const shape = get().shapes.find((s) => s.id === id);
+    if (!shape || shape.type !== 'path') return;
+    const commands = parsePath(shape.d);
+    const next = resetPathNode(commands, index);
+    if (next === commands) return;
+    get().pushHistory();
+    set((state) => ({
+      shapes: state.shapes.map((s) => (s.id === id ? ({ ...s, d: serializePath(next) } as Shape) : s)),
+    }));
   },
 
   pushHistory: () => {

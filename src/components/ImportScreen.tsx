@@ -4,6 +4,7 @@ import { useEditorStore } from '../store/editorStore';
 export function ImportScreen() {
   const loadFromSvgString = useEditorStore((s) => s.loadFromSvgString);
   const loadStarter = useEditorStore((s) => s.loadStarter);
+  const loadBlank = useEditorStore((s) => s.loadBlank);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
@@ -72,9 +73,14 @@ export function ImportScreen() {
           </div>
         )}
 
-        <button className="btn btn-ghost" onClick={loadStarter}>
-          Or start from a blank shape
-        </button>
+        <div className="import-start-row">
+          <button className="btn btn-ghost" onClick={loadBlank}>
+            Start on a blank canvas
+          </button>
+          <button className="btn btn-ghost" onClick={loadStarter}>
+            Try sample shapes
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -273,28 +273,55 @@
   fill: white;
   stroke: var(--accent);
   stroke-width: 2;
+  vector-effect: non-scaling-stroke;
   touch-action: none;
-  cursor: pointer;
 }
 
 .handle-rotate {
   fill: var(--accent-2);
 }
 
+.handle-hit {
+  fill: transparent;
+  stroke: none;
+  touch-action: none;
+  cursor: grab;
+}
+
 .node-editor .node-point {
   fill: var(--accent-2);
   stroke: #0b3b33;
   stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
   touch-action: none;
-  cursor: pointer;
+}
+
+.node-editor .node-point.selected {
+  fill: #fff;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
+.node-editor .node-hit {
+  fill: transparent;
+  stroke: none;
+  touch-action: none;
+  cursor: grab;
+}
+
+.node-editor .node-segment {
+  fill: none;
+  stroke: transparent;
+  touch-action: none;
+  cursor: copy;
 }
 
 .node-editor .node-control {
   fill: #ffd166;
   stroke: #7a5200;
   stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
   touch-action: none;
-  cursor: pointer;
 }
 
 .node-editor .control-line {
@@ -352,12 +379,26 @@
   font-size: 18px;
 }
 
+.tool-sep {
+  flex: 0 0 auto;
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
+  margin: 4px 2px;
+}
+
+.tool-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .tool-hint {
   color: var(--text-dim);
-  font-size: 14px;
-  padding: 14px;
+  font-size: 13px;
+  padding: 10px 14px;
   text-align: center;
-  width: 100%;
+  align-self: center;
+  min-width: 180px;
 }
 
 /* ---------- Layers sheet ---------- */
@@ -620,4 +661,52 @@
   word-break: break-all;
   font-size: 11px;
   color: var(--text);
+}
+
+.import-start-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* ---------- Desktop / pointer refinements ---------- */
+@media (hover: hover) and (pointer: fine) {
+  .canvas-viewport {
+    cursor: grab;
+  }
+  .tool-btn:hover,
+  .icon-btn:hover:not(:disabled),
+  .step-tab:hover {
+    background: var(--panel-2);
+  }
+  .tool-btn.active:hover {
+    background: var(--accent);
+  }
+  .layer-row:hover {
+    background: var(--panel-2);
+  }
+  .handle-hit:hover,
+  .node-hit:hover {
+    cursor: grab;
+  }
+}
+
+/* Widescreen: keep the app centered and readable rather than edge-to-edge. */
+@media (min-width: 900px) {
+  .editor {
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  .bottom-toolbar {
+    justify-content: center;
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+  .editor-bottom {
+    max-height: none;
+  }
+  .import-hero h1 {
+    font-size: 36px;
+  }
 }
