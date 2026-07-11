@@ -11,8 +11,9 @@ import {
   splitSubpaths,
 } from '../lib/pathData';
 import { boundsCenter, localBounds } from '../lib/geometry';
+import { makePathShapeFrom, shapeToPathData } from '../lib/shapeToPath';
 
-export type AddableShape = 'rect' | 'ellipse' | 'line' | 'triangle';
+export type AddableShape = 'rect' | 'ellipse' | 'line' | 'triangle' | 'cursiveS' | 'cursiveLoop' | 'cursiveTail';
 export type AlignMode = 'center-h' | 'center-v' | 'left' | 'right' | 'top' | 'bottom';
 
 interface HistoryEntry {
@@ -49,11 +50,14 @@ interface EditorState {
 
   // Creation & arrangement
   addShape: (type: AddableShape) => void;
+  mergeShapeIntoSelected: (type: AddableShape) => void;
+  mergeSelectedShapes: () => void;
   resetTransform: (id: string) => void;
   alignShape: (id: string, mode: AlignMode) => void;
 
   // Node editing
   addNode: (id: string, segIndex: number, t?: number) => void;
+  addNodeAfter: (id: string, index: number) => void;
   removeNode: (id: string, index: number) => void;
   resetNode: (id: string, index: number) => void;
 
@@ -85,6 +89,32 @@ function cloneShapes(shapes: Shape[]): Shape[] {
 
 function newId(): string {
   return `shape_${Date.now().toString(36)}_${Math.floor(Math.random() * 1000000)}`;
+}
+
+
+function cursiveShape(type: AddableShape, cx: number, cy: number, size: number, shapes: Shape[]): PathShape | null {
+  const w = size;
+  const h = size * 0.55;
+  const x = cx - w / 2;
+  const y = cy - h / 2;
+  const base = {
+    id: newId(),
+    type: 'path' as const,
+    visible: true,
+    locked: false,
+    style: { ...defaultStyle(), fill: 'none', stroke: '#4f7cff', strokeWidth: Math.max(size * 0.07, 4), strokeOpacity: 1, fillOpacity: 1, opacity: 1 },
+    transform: defaultTransform(),
+  };
+  if (type === 'cursiveS') {
+    return { ...base, name: `Cursive S ${shapes.filter((s) => s.name.startsWith('Cursive S')).length + 1}`, d: `M${x + w * 0.78},${y + h * 0.12} C${x + w * 0.18},${y - h * 0.08} ${x + w * 0.1},${y + h * 0.45} ${x + w * 0.52},${y + h * 0.48} C${x + w * 1.02},${y + h * 0.52} ${x + w * 0.86},${y + h * 1.15} ${x + w * 0.2},${y + h * 0.88}` };
+  }
+  if (type === 'cursiveLoop') {
+    return { ...base, name: `Cursive Loop ${shapes.filter((s) => s.name.startsWith('Cursive Loop')).length + 1}`, d: `M${x + w * 0.05},${cy} C${x + w * 0.28},${y + h * 0.08} ${x + w * 0.56},${y + h * 0.1} ${x + w * 0.5},${cy} C${x + w * 0.42},${y + h * 1.05} ${x + w * 0.76},${y + h * 1.03} ${x + w * 0.95},${cy}` };
+  }
+  if (type === 'cursiveTail') {
+    return { ...base, name: `Cursive Tail ${shapes.filter((s) => s.name.startsWith('Cursive Tail')).length + 1}`, d: `M${x},${cy} C${x + w * 0.2},${y + h * 0.15} ${x + w * 0.38},${y + h * 0.82} ${x + w * 0.58},${cy} C${x + w * 0.72},${y + h * 0.22} ${x + w * 0.85},${y + h * 0.32} ${x + w},${y + h * 0.38}` };
+  }
+  return null;
 }
 
 function nextShapeName(shapes: Shape[], type: ShapeType): string {
@@ -344,7 +374,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         transform: defaultTransform(),
       };
       let shape: Shape;
-      if (type === 'rect') {
+      const cursive = cursiveShape(type, cx, cy, size, state.shapes);
+      if (cursive) {
+        shape = cursive;
+      } else if (type === 'rect') {
         shape = { ...base, type: 'rect', name: nextShapeName(state.shapes, 'rect'), x: cx - size / 2, y: cy - size / 2, width: size, height: size, rx: 0, ry: 0 };
       } else if (type === 'ellipse') {
         shape = { ...base, type: 'ellipse', name: nextShapeName(state.shapes, 'ellipse'), cx, cy, rx: size / 2, ry: size / 2 };
@@ -365,6 +398,54 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
       return { shapes: [...state.shapes, shape], selectedId: shape.id, nodeEditId: null, selectedNodeIndex: null };
     });
+  },
+
+
+  mergeShapeIntoSelected: (type) => {
+    const state = get();
+    const selected = state.shapes.find((s) => s.id === state.selectedId);
+    if (!selected) {
+      get().addShape(type);
+      return;
+    }
+    const b = localBounds(selected);
+    const cx = b.x + b.width + Math.max(b.width * 0.15, 18);
+    const cy = b.y + b.height / 2;
+    const size = Math.max(Math.min(Math.max(b.width, b.height), 180), 60);
+    const extra = cursiveShape(type, cx, cy, size, state.shapes);
+    if (!extra) return;
+    get().pushHistory();
+    const merged: PathShape = {
+      ...makePathShapeFrom(selected, `${selected.name} + ${extra.name}`),
+      id: selected.id,
+      style: { ...selected.style },
+      d: `${shapeToPathData(selected)} ${shapeToPathData(extra)}`,
+    } as PathShape;
+    set((s) => ({
+      shapes: s.shapes.map((shape) => (shape.id === selected.id ? merged : shape)),
+      selectedId: selected.id,
+      nodeEditId: selected.id,
+      selectedNodeIndex: null,
+    }));
+  },
+
+  mergeSelectedShapes: () => {
+    const state = get();
+    const selected = state.shapes.find((s) => s.id === state.selectedId);
+    if (!selected) return;
+    const unlocked = state.shapes.filter((s) => s.id !== selected.id && !s.locked && s.visible);
+    if (unlocked.length === 0) return;
+    const nearest = unlocked
+      .map((s) => ({ s, c: boundsCenter(localBounds(s)) }))
+      .sort((a, b) => Math.hypot(a.c.x - boundsCenter(localBounds(selected)).x, a.c.y - boundsCenter(localBounds(selected)).y) - Math.hypot(b.c.x - boundsCenter(localBounds(selected)).x, b.c.y - boundsCenter(localBounds(selected)).y))[0].s;
+    get().pushHistory();
+    const merged: PathShape = {
+      ...makePathShapeFrom(selected, `${selected.name} + ${nearest.name}`),
+      id: selected.id,
+      style: { ...selected.style },
+      d: `${shapeToPathData(selected)} ${shapeToPathData(nearest)}`,
+    };
+    set((s) => ({ shapes: s.shapes.filter((shape) => shape.id !== nearest.id).map((shape) => (shape.id === selected.id ? merged : shape)), selectedId: selected.id, nodeEditId: selected.id }));
   },
 
   resetTransform: (id) => {
@@ -426,6 +507,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         selectedNodeIndex: segIndex + 1,
       }));
     }
+  },
+
+  addNodeAfter: (id, index) => {
+    const shape = get().shapes.find((s) => s.id === id);
+    if (!shape) return;
+    get().addNode(id, index + 1);
   },
 
   removeNode: (id, index) => {

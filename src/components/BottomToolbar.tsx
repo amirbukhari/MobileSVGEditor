@@ -1,11 +1,14 @@
 import { useEditorStore } from '../store/editorStore';
 import { countSubpaths, nodeIsCurve, parsePath } from '../lib/pathData';
 
-const ADD_TOOLS: { type: 'rect' | 'ellipse' | 'line' | 'triangle'; icon: string; label: string }[] = [
+const ADD_TOOLS: { type: 'rect' | 'ellipse' | 'line' | 'triangle' | 'cursiveS' | 'cursiveLoop' | 'cursiveTail'; icon: string; label: string }[] = [
   { type: 'rect', icon: '▭', label: 'Rect' },
   { type: 'ellipse', icon: '◯', label: 'Ellipse' },
   { type: 'line', icon: '╱', label: 'Line' },
   { type: 'triangle', icon: '△', label: 'Triangle' },
+  { type: 'cursiveS', icon: '𝒮', label: 'Script S' },
+  { type: 'cursiveLoop', icon: '∞', label: 'Loop' },
+  { type: 'cursiveTail', icon: '〰', label: 'Tail' },
 ];
 
 export function BottomToolbar() {
@@ -15,6 +18,9 @@ export function BottomToolbar() {
   const selectedNodeIndex = useEditorStore((s) => s.selectedNodeIndex);
   const toggleNodeEdit = useEditorStore((s) => s.toggleNodeEdit);
   const addShape = useEditorStore((s) => s.addShape);
+  const mergeShapeIntoSelected = useEditorStore((s) => s.mergeShapeIntoSelected);
+  const mergeSelectedShapes = useEditorStore((s) => s.mergeSelectedShapes);
+  const addNodeAfter = useEditorStore((s) => s.addNodeAfter);
   const duplicateShape = useEditorStore((s) => s.duplicateShape);
   const deleteShape = useEditorStore((s) => s.deleteShape);
   const reorderShape = useEditorStore((s) => s.reorderShape);
@@ -44,6 +50,14 @@ export function BottomToolbar() {
           Done
         </button>
         <button
+          className="tool-btn"
+          disabled={!hasSelected}
+          onClick={() => selectedNodeIndex !== null && addNodeAfter(shape.id, selectedNodeIndex)}
+        >
+          <span className="tool-icon">＋</span>
+          Add after
+        </button>
+        <button
           className="tool-btn tool-danger"
           disabled={!hasSelected}
           onClick={() => selectedNodeIndex !== null && removeNode(shape.id, selectedNodeIndex)}
@@ -57,9 +71,9 @@ export function BottomToolbar() {
           onClick={() => selectedNodeIndex !== null && resetNode(shape.id, selectedNodeIndex)}
         >
           <span className="tool-icon">⌐</span>
-          Make corner
+          Reset handles
         </button>
-        <div className="tool-hint">Tap a segment to add a point · tap a point to select, then drag</div>
+        <div className="tool-hint">Tap a segment to add a point · tap/select any point or handle, then drag</div>
       </div>
     );
   }
@@ -81,6 +95,22 @@ export function BottomToolbar() {
       {shape && !shape.locked && (
         <>
           <span className="tool-sep" />
+          <button className="tool-btn" onClick={() => mergeShapeIntoSelected('cursiveS')}>
+            <span className="tool-icon">𝒮</span>
+            Merge S
+          </button>
+          <button className="tool-btn" onClick={() => mergeShapeIntoSelected('cursiveLoop')}>
+            <span className="tool-icon">∞</span>
+            Merge loop
+          </button>
+          <button className="tool-btn" onClick={() => mergeShapeIntoSelected('cursiveTail')}>
+            <span className="tool-icon">〰</span>
+            Merge tail
+          </button>
+          <button className="tool-btn" onClick={() => mergeSelectedShapes()}>
+            <span className="tool-icon">⛓</span>
+            Merge nearest
+          </button>
           {isNodeEditable && (
             <button className="tool-btn" onClick={() => toggleNodeEdit(shape.id)}>
               <span className="tool-icon">✎</span>
