@@ -13,6 +13,7 @@ export function BottomToolbar() {
   const breakApartShape = useEditorStore((s) => s.breakApartShape);
   const setLayersOpen = useEditorStore((s) => s.setLayersOpen);
   const setSimplifyOpen = useEditorStore((s) => s.setSimplifyOpen);
+  const setTransformPanelOpen = useEditorStore((s) => s.setTransformPanelOpen);
 
   const shape = shapes.find((s) => s.id === selectedId);
   const isNodeEditable = shape && (shape.type === 'path' || shape.type === 'polygon' || shape.type === 'polyline');
@@ -28,6 +29,10 @@ export function BottomToolbar() {
 
       {shape && !shape.locked && (
         <>
+          <button className="tool-btn" onClick={() => setTransformPanelOpen(true)}>
+            <span className="tool-icon">⌖</span>
+            Adjust
+          </button>
           {isNodeEditable && (
             <button
               className={`tool-btn ${inNodeEdit ? 'active' : ''}`}

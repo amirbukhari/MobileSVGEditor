@@ -6,6 +6,7 @@ import { ZoomControls } from './ZoomControls';
 import { BottomToolbar } from './BottomToolbar';
 import { LayersSheet } from './LayersSheet';
 import { SimplifySheet } from './SimplifySheet';
+import { TransformPanel } from './TransformPanel';
 import { ColorPanel } from './ColorPanel';
 import { ExportPanel } from './ExportPanel';
 
@@ -27,6 +28,7 @@ export function Editor() {
       </div>
       <LayersSheet />
       <SimplifySheet />
+      <TransformPanel />
     </div>
   );
 }

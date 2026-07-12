@@ -3,9 +3,19 @@ import type { EditorStep, PathShape, Shape, ShapeStyle, ShapeTransform, SvgDoc }
 import { defaultStyle, defaultTransform } from '../types';
 import { parseSvgString, starterShapes } from '../lib/svgImport';
 import { parsePath, serializePath, splitSubpaths } from '../lib/pathData';
+import { applyTransformToPoint, boundsCenter, localBounds, worldBounds } from '../lib/geometry';
+import { shapeToPathCommands } from '../lib/shapeToPath';
+
+export type AlignMode = 'left' | 'right' | 'top' | 'bottom' | 'center-h' | 'center-v';
 
 interface HistoryEntry {
   shapes: Shape[];
+}
+
+let idCounter = 0;
+function genId(): string {
+  idCounter += 1;
+  return `shape_${Date.now().toString(36)}_${idCounter}_${Math.floor(Math.random() * 100000)}`;
 }
 
 interface EditorState {
@@ -17,6 +27,7 @@ interface EditorState {
   nodeEditId: string | null;
   layersOpen: boolean;
   simplifyOpen: boolean;
+  transformPanelOpen: boolean;
 
   past: HistoryEntry[];
   future: HistoryEntry[];
@@ -32,6 +43,7 @@ interface EditorState {
   toggleNodeEdit: (id: string | null) => void;
   setLayersOpen: (open: boolean) => void;
   setSimplifyOpen: (open: boolean) => void;
+  setTransformPanelOpen: (open: boolean) => void;
 
   // Editing
   updateTransform: (id: string, patch: Partial<ShapeTransform>, commit?: boolean) => void;
@@ -49,6 +61,10 @@ interface EditorState {
   reorderShape: (id: string, dir: 'front' | 'back' | 'forward' | 'backward') => void;
   flipShape: (id: string, axis: 'h' | 'v') => void;
   breakApartShape: (id: string) => void;
+  mergeShapes: (ids: string[]) => void;
+  alignShapes: (ids: string[], mode: AlignMode) => void;
+  centerShape: (id: string, axis: 'h' | 'v' | 'both') => void;
+  nudgeShape: (id: string, dx: number, dy: number) => void;
 
   pushHistory: () => void;
   undo: () => void;
@@ -70,6 +86,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   nodeEditId: null,
   layersOpen: false,
   simplifyOpen: false,
+  transformPanelOpen: false,
   past: [],
   future: [],
 
@@ -118,6 +135,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   toggleNodeEdit: (id) => set({ nodeEditId: id }),
   setLayersOpen: (open) => set({ layersOpen: open }),
   setSimplifyOpen: (open) => set({ simplifyOpen: open }),
+  setTransformPanelOpen: (open) => set({ transformPanelOpen: open }),
 
   updateTransform: (id, patch, commit = false) => {
     if (pendingSnapshot === null) {
@@ -273,6 +291,127 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       shapes.splice(idx, 1, ...pieces);
       return { shapes, selectedId: pieces[0].id };
     });
+  },
+
+  mergeShapes: (ids) => {
+    const state0 = get();
+    const toMerge = ids
+      .map((id) => state0.shapes.find((s) => s.id === id))
+      .filter((s): s is Shape => !!s);
+    if (toMerge.length < 2) return;
+
+    get().pushHistory();
+    set((state) => {
+      const indices = ids
+        .map((id) => state.shapes.findIndex((s) => s.id === id))
+        .filter((i) => i !== -1);
+      if (indices.length < 2) return state;
+      const maxIdx = Math.max(...indices);
+
+      const allCommands = toMerge.flatMap((shape) => {
+        const local = shapeToPathCommands(shape);
+        const center = boundsCenter(localBounds(shape));
+        return local.map((c) => ({
+          ...c,
+          point: c.point ? applyTransformToPoint(c.point, shape.transform, center) : undefined,
+          controls: c.controls?.map((cc) => applyTransformToPoint(cc, shape.transform, center)),
+        }));
+      });
+
+      const topShape = toMerge[toMerge.length - 1];
+      const merged: PathShape = {
+        id: genId(),
+        type: 'path',
+        name: 'Merged Path',
+        visible: true,
+        locked: false,
+        style: { ...topShape.style },
+        transform: defaultTransform(),
+        d: serializePath(allCommands),
+      };
+
+      const shapes = state.shapes.filter((s) => !ids.includes(s.id));
+      const removedBeforeMax = indices.filter((i) => i < maxIdx).length;
+      const insertPos = Math.min(maxIdx - removedBeforeMax, shapes.length);
+      shapes.splice(insertPos, 0, merged);
+      return { shapes, selectedId: merged.id };
+    });
+  },
+
+  alignShapes: (ids, mode) => {
+    const state0 = get();
+    const targets = ids
+      .map((id) => state0.shapes.find((s) => s.id === id))
+      .filter((s): s is Shape => !!s);
+    if (targets.length < 2) return;
+
+    const boxes = targets.map((s) => ({ id: s.id, box: worldBounds(s) }));
+    const unionX = Math.min(...boxes.map((b) => b.box.x));
+    const unionY = Math.min(...boxes.map((b) => b.box.y));
+    const unionRight = Math.max(...boxes.map((b) => b.box.x + b.box.width));
+    const unionBottom = Math.max(...boxes.map((b) => b.box.y + b.box.height));
+    const unionCenterX = (unionX + unionRight) / 2;
+    const unionCenterY = (unionY + unionBottom) / 2;
+
+    get().pushHistory();
+    set((state) => ({
+      shapes: state.shapes.map((s) => {
+        const entry = boxes.find((b) => b.id === s.id);
+        if (!entry) return s;
+        const { box } = entry;
+        let dx = 0;
+        let dy = 0;
+        switch (mode) {
+          case 'left':
+            dx = unionX - box.x;
+            break;
+          case 'right':
+            dx = unionRight - (box.x + box.width);
+            break;
+          case 'top':
+            dy = unionY - box.y;
+            break;
+          case 'bottom':
+            dy = unionBottom - (box.y + box.height);
+            break;
+          case 'center-h':
+            dx = unionCenterX - (box.x + box.width / 2);
+            break;
+          case 'center-v':
+            dy = unionCenterY - (box.y + box.height / 2);
+            break;
+        }
+        return { ...s, transform: { ...s.transform, x: s.transform.x + dx, y: s.transform.y + dy } };
+      }),
+    }));
+  },
+
+  centerShape: (id, axis) => {
+    const state0 = get();
+    const shape = state0.shapes.find((s) => s.id === id);
+    if (!shape) return;
+    const box = worldBounds(shape);
+    const [vx, vy, vw, vh] = state0.doc.viewBox;
+    const canvasCenterX = vx + vw / 2;
+    const canvasCenterY = vy + vh / 2;
+    const dx = axis !== 'v' ? canvasCenterX - (box.x + box.width / 2) : 0;
+    const dy = axis !== 'h' ? canvasCenterY - (box.y + box.height / 2) : 0;
+
+    get().pushHistory();
+    set((state) => ({
+      shapes: state.shapes.map((s) =>
+        s.id === id ? { ...s, transform: { ...s.transform, x: s.transform.x + dx, y: s.transform.y + dy } } : s
+      ),
+    }));
+  },
+
+  nudgeShape: (id, dx, dy) => {
+    get().pushHistory();
+    set((state) => ({
+      shapes: state.shapes.map((s) =>
+        s.id === id ? { ...s, transform: { ...s.transform, x: s.transform.x + dx, y: s.transform.y + dy } } : s
+      ),
+    }));
   },
 
   pushHistory: () => {

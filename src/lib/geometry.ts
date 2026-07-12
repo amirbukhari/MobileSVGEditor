@@ -94,3 +94,36 @@ export function worldToLocal(
   const sy = t.scaleY === 0 ? 1e-6 : t.scaleY;
   return { x: center.x + unrotated.x / sx, y: center.y + unrotated.y / sy };
 }
+
+// Forward counterpart of worldToLocal: maps a point in the shape's own local
+// coordinate space into its parent (world) space, matching transformString.
+export function applyTransformToPoint(
+  p: { x: number; y: number },
+  t: ShapeTransform,
+  center: { x: number; y: number }
+): { x: number; y: number } {
+  const scaled = {
+    x: center.x + (p.x - center.x) * t.scaleX,
+    y: center.y + (p.y - center.y) * t.scaleY,
+  };
+  const rotated = rotatePoint(scaled, center, t.rotate);
+  return { x: rotated.x + t.x, y: rotated.y + t.y };
+}
+
+// Axis-aligned bounding box of a shape after its transform (move/rotate/
+// scale) is applied — used for alignment and multi-shape selection bounds.
+export function worldBounds(shape: Shape): BBox {
+  const local = localBounds(shape);
+  const center = boundsCenter(local);
+  const corners = [
+    { x: local.x, y: local.y },
+    { x: local.x + local.width, y: local.y },
+    { x: local.x + local.width, y: local.y + local.height },
+    { x: local.x, y: local.y + local.height },
+  ].map((p) => applyTransformToPoint(p, shape.transform, center));
+  const xs = corners.map((c) => c.x);
+  const ys = corners.map((c) => c.y);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  return { x: minX, y: minY, width: Math.max(...xs) - minX, height: Math.max(...ys) - minY };
+}
