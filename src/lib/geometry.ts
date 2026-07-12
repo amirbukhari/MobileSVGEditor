@@ -80,6 +80,23 @@ export function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
 
+// Maps a point in the shape's local, untransformed space into parent (world)
+// space — the forward transform matching transformString / worldToLocal.
+export function localToWorld(
+  local: { x: number; y: number },
+  t: ShapeTransform,
+  center: { x: number; y: number }
+): { x: number; y: number } {
+  const scaled = { x: (local.x - center.x) * t.scaleX, y: (local.y - center.y) * t.scaleY };
+  const rad = (t.rotate * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return {
+    x: t.x + center.x + scaled.x * cos - scaled.y * sin,
+    y: t.y + center.y + scaled.x * sin + scaled.y * cos,
+  };
+}
+
 // Inverse of transformString: maps a point in the shape's parent (world)
 // space back into the shape's local, untransformed coordinate space.
 export function worldToLocal(

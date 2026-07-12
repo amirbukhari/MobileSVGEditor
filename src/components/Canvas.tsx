@@ -72,6 +72,28 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
     fit,
   }));
 
+  // Desktop: zoom with the mouse wheel / trackpad, centered on the cursor.
+  // Registered natively (non-passive) so we can preventDefault the page scroll.
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+      const factor = Math.exp(-e.deltaY * 0.0015);
+      setZoom((z) => {
+        const nz = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z * factor));
+        const ratio = nz / z;
+        setPan((p) => ({ x: px - (px - p.x) * ratio, y: py - (py - p.y) * ratio }));
+        return nz;
+      });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
   function zoomBy(factor: number) {
     const el = viewportRef.current;
     if (!el) return;
@@ -148,6 +170,9 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
   };
 
   const onShapePointerDown = (id: string) => (e: ReactPointerEvent<SVGElement>) => {
+    // While node-editing a shape, its body must not steal pointer events —
+    // the NodeEditor overlay owns all interaction (drag points, tap segments).
+    if (nodeEditId === id) return;
     if (step !== 'shape') {
       select(id);
       return;
@@ -251,10 +276,10 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
             selectedShape &&
             !selectedShape.locked &&
             (nodeEditShape ? null : (
-              <TransformHandles shape={selectedShape} svgRef={svgRef} docSize={{ width: doc.width, height: doc.height }} />
+              <TransformHandles shape={selectedShape} svgRef={svgRef} docSize={{ width: doc.width, height: doc.height }} zoom={zoom} />
             ))}
           {step === 'shape' && nodeEditShape && (nodeEditShape.type === 'path' || nodeEditShape.type === 'polygon' || nodeEditShape.type === 'polyline') && (
-            <NodeEditor shape={nodeEditShape} svgRef={svgRef} docSize={{ width: doc.width, height: doc.height }} />
+            <NodeEditor shape={nodeEditShape} svgRef={svgRef} docSize={{ width: doc.width, height: doc.height }} zoom={zoom} />
           )}
         </svg>
       </div>

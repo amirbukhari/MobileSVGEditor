@@ -17,7 +17,7 @@ export function ShapeRenderer({ shape, selected, dimmed, onPointerDown, onPointe
   const transform = transformString(shape.transform, center);
 
   const style: React.CSSProperties = {
-    cursor: onPointerDown ? 'pointer' : undefined,
+    cursor: onPointerDown ? 'move' : undefined,
     opacity: dimmed ? 0.35 : 1,
   };
 
